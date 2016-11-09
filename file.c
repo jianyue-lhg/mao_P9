@@ -468,9 +468,11 @@ int truncate_data_blocks_range(struct dnode_of_data *dn, int count)
 	struct f2fs_node *raw_node;
 	int nr_free = 0, ofs = dn->ofs_in_node, len = count;
 	__le32 *addr;
+	struct dedupe_info *dedupe_info = NULL;
 
 	raw_node = F2FS_NODE(dn->node_page);
 	addr = blkaddr_in_node(raw_node) + ofs;
+	dedupe_info = &F2FS_SB(dn->inode->i_sb)->dedupe_info;
 
 	for (; count > 0; count--, addr++, dn->ofs_in_node++) {
 		block_t blkaddr = le32_to_cpu(*addr);
@@ -479,11 +481,30 @@ int truncate_data_blocks_range(struct dnode_of_data *dn, int count)
 
 		dn->data_blkaddr = NULL_ADDR;
 		set_data_blkaddr(dn);
+		nr_free++;
+		if(FS_COMPR_FL&F2FS_I(dn->inode)->i_flags)
+		{
+			int ret = f2fs_dedupe_delete_addr(blkaddr, dedupe_info);
+			if (ret>0)
+			{
+				spin_unlock(&dedupe_info->lock);
+				continue;
+			}
+			else
+			{
+				spin_unlock(&dedupe_info->lock);
+			}
+			if(0 == ret)
+			{
+				spin_lock(&sbi->stat_lock);
+				sbi->total_valid_block_count--;
+				spin_unlock(&sbi->stat_lock);
+			}
+		}
 		invalidate_blocks(sbi, blkaddr);
 		if (dn->ofs_in_node == 0 && IS_INODE(dn->node_page))
 			clear_inode_flag(F2FS_I(dn->inode),
 						FI_FIRST_BLOCK_WRITTEN);
-		nr_free++;
 	}
 
 	if (nr_free) {

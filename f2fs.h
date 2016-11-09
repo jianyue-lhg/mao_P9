@@ -21,6 +21,7 @@
 #include <linux/sched.h>
 #include <linux/vmalloc.h>
 #include <linux/bio.h>
+#include "dedupe.h"
 
 #ifdef CONFIG_HUAWEI_F2FS_DSM
 #include <dsm/dsm_pub.h>
@@ -130,7 +131,8 @@ static inline bool f2fs_crc_valid(__u32 blk_crc, void *buf, size_t buf_size)
  */
 enum {
 	NAT_BITMAP,
-	SIT_BITMAP
+	SIT_BITMAP,
+	DEDUPE_BITMAP
 };
 
 enum {
@@ -852,6 +854,7 @@ struct f2fs_sb_info {
 	struct list_head s_list;
 	struct mutex umount_mutex;
 	unsigned int shrinker_run_no;
+	struct dedupe_info dedupe_info;
 };
 
 /*
@@ -1076,7 +1079,10 @@ static inline bool inc_valid_block_count(struct f2fs_sb_info *sbi,
 		return false;
 	}
 	inode->i_blocks += count;
-	sbi->total_valid_block_count = valid_block_count;
+	if(!(FS_COMPR_FL&F2FS_I(inode)->i_flags && S_ISREG(inode->i_mode)))
+	{
+		sbi->total_valid_block_count = valid_block_count;
+	}
 	sbi->alloc_valid_block_count += (block_t)count;
 	spin_unlock(&sbi->stat_lock);
 	return true;
@@ -1087,10 +1093,13 @@ static inline void dec_valid_block_count(struct f2fs_sb_info *sbi,
 						blkcnt_t count)
 {
 	spin_lock(&sbi->stat_lock);
-	f2fs_bug_on(sbi, sbi->total_valid_block_count < (block_t) count);
+	//f2fs_bug_on(sbi, sbi->total_valid_block_count < (block_t) count);
 	f2fs_bug_on(sbi, inode->i_blocks < count);
 	inode->i_blocks -= count;
-	sbi->total_valid_block_count -= (block_t)count;
+	if(!(FS_COMPR_FL&F2FS_I(inode)->i_flags && S_ISREG(inode->i_mode)))
+	{
+		sbi->total_valid_block_count -= (block_t)count;
+	}
 	spin_unlock(&sbi->stat_lock);
 }
 
@@ -1171,13 +1180,25 @@ static inline void *__bitmap_ptr(struct f2fs_sb_info *sbi, int flag)
 	int offset;
 
 	if (__cp_payload(sbi) > 0) {
+		printk("ouch,fuck you~\n");
 		if (flag == NAT_BITMAP)
 			return &ckpt->sit_nat_version_bitmap;
 		else
 			return (unsigned char *)ckpt + F2FS_BLKSIZE;
 	} else {
-		offset = (flag == NAT_BITMAP) ?
-			le32_to_cpu(ckpt->sit_ver_bitmap_bytesize) : 0;
+		switch(flag)
+		{
+			case SIT_BITMAP:
+				offset = 0;
+				break;
+			case NAT_BITMAP:
+				offset = le32_to_cpu(ckpt->sit_ver_bitmap_bytesize);
+				break;
+			case DEDUPE_BITMAP:
+				offset = le32_to_cpu(ckpt->sit_ver_bitmap_bytesize) +  le32_to_cpu(ckpt->nat_ver_bitmap_bytesize);
+				break;
+		}
+		//printk("offset:%d\n",offset);
 		return &ckpt->sit_nat_version_bitmap + offset;
 	}
 }
@@ -1786,6 +1807,7 @@ int build_node_manager(struct f2fs_sb_info *);
 void destroy_node_manager(struct f2fs_sb_info *);
 int __init create_node_manager_caches(void);
 void destroy_node_manager_caches(void);
+void flush_dedupe_entries(struct f2fs_sb_info *);
 
 /*
  * segment.c
@@ -1810,9 +1832,12 @@ void update_meta_page(struct f2fs_sb_info *, void *, block_t);
 void write_meta_page(struct f2fs_sb_info *, struct page *);
 void write_node_page(unsigned int, struct f2fs_io_info *);
 void write_data_page(struct dnode_of_data *, struct f2fs_io_info *);
+void write_data_page_dedupe(struct dnode_of_data *, struct f2fs_io_info *);
 void rewrite_data_page(struct f2fs_io_info *);
 void f2fs_replace_block(struct f2fs_sb_info *, struct dnode_of_data *,
 				block_t, block_t, unsigned char, bool);
+int allocate_data_block_dedupe(struct f2fs_sb_info *, struct page *,
+		block_t, block_t *, struct f2fs_summary *, int);
 void allocate_data_block(struct f2fs_sb_info *, struct page *,
 		block_t, block_t *, struct f2fs_summary *, int);
 void f2fs_wait_on_page_writeback(struct page *, enum page_type, bool);

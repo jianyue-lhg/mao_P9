@@ -597,6 +597,7 @@ static void f2fs_put_super(struct super_block *sb)
 	kobject_put(&sbi->s_kobj);
 	wait_for_completion(&sbi->s_kobj_unregister);
 
+	exit_dedupe_info(&sbi->dedupe_info);
 	sb->s_fs_info = NULL;
 	brelse(sbi->raw_super_buf);
 	kfree(sbi->raw_super);
@@ -968,7 +969,6 @@ static int raw_super_checksum_invalid(struct super_block *sb, struct f2fs_super_
 			return 1;
 		}
 	}
-
 	return 0;
 }
 
@@ -1203,7 +1203,7 @@ static int f2fs_fill_super(struct super_block *sb, void *data, int silent)
 	long err;
 	bool retry = true, need_fsck = false;
 	char *options = NULL;
-	int recovery, i;
+	int recovery, i, j;
 
 try_onemore:
 	err = -EINVAL;
@@ -1331,7 +1331,6 @@ try_onemore:
 	}
 
 	build_gc_manager(sbi);
-
 	/* get an inode for node space */
 	sbi->node_inode = f2fs_iget(sb, F2FS_NODE_INO(sbi));
 	if (IS_ERR(sbi->node_inode)) {
@@ -1409,7 +1408,6 @@ try_onemore:
 	}
 	/* recover_fsync_data() cleared this already */
 	clear_sbi_flag(sbi, SBI_POR_DOING);
-
 	/*
 	 * If filesystem is not mounted as read-only then
 	 * do start the gc_thread.
@@ -1421,7 +1419,6 @@ try_onemore:
 			goto free_kobj;
 	}
 	kfree(options);
-
 	/* recover broken superblock */
 	if (recovery && !f2fs_readonly(sb) && !bdev_read_only(sb->s_bdev)) {
 		f2fs_msg(sb, KERN_INFO, "Recover invalid superblock");
@@ -1431,6 +1428,37 @@ try_onemore:
 			goto free_kobj;
 		}
 	}
+	sbi->dedupe_info.dedupe_block_count = le32_to_cpu(raw_super->segment_count_dedupe)/2*(1024/4);
+	sbi->dedupe_info.dedupe_bitmap_size = sbi->dedupe_info.dedupe_block_count/8;
+	sbi->dedupe_info.dedupe_size = sbi->dedupe_info.dedupe_block_count * DEDUPE_PER_BLOCK * sizeof(struct dedupe);
+	sbi->dedupe_info.dedupe_bitmap = kmemdup(__bitmap_ptr(sbi, DEDUPE_BITMAP), sbi->dedupe_info.dedupe_bitmap_size, GFP_KERNEL);
+
+	init_dedupe_info(&sbi->dedupe_info);
+	for(i=0; i<sbi->dedupe_info.dedupe_block_count; i++)
+	{
+		u32 dedupe_base_blkaddr = le32_to_cpu(raw_super->dedupe_blkaddr);
+		struct dedupe *dedupe;
+		struct page *page = NULL;
+		if (f2fs_test_bit(i, sbi->dedupe_info.dedupe_bitmap))
+		{
+			dedupe_base_blkaddr+=sbi->dedupe_info.dedupe_block_count;
+		}
+		page = get_meta_page(sbi, dedupe_base_blkaddr + i);
+		memcpy(((char *)sbi->dedupe_info.dedupe_md + i*(DEDUPE_PER_BLOCK * sizeof(struct dedupe))), page_address(page), DEDUPE_PER_BLOCK * sizeof(struct dedupe));
+		dedupe = (struct dedupe *)((char *)sbi->dedupe_info.dedupe_md + i*(DEDUPE_PER_BLOCK * sizeof(struct dedupe)));
+		for(j=0; j<DEDUPE_PER_BLOCK; j++)
+		{
+			if((dedupe+j)->ref)
+			{
+				sbi->dedupe_info.logical_blk_cnt+=(dedupe+j)->ref;
+				sbi->dedupe_info.physical_blk_cnt++;
+			}
+		}
+		f2fs_put_page(page, 1);
+	}
+#ifdef F2FS_BLOOM_FILTER
+	init_f2fs_dedupe_bloom_filter(&sbi->dedupe_info);
+#endif
 
 	return 0;
 
