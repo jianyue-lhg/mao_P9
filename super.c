@@ -1428,6 +1428,10 @@ try_onemore:
 			goto free_kobj;
 		}
 	}
+#ifdef F2FS_REVERSE_ADDR
+	sbi->dedupe_info.reverse_addr = vmalloc(le64_to_cpu(raw_super->block_count)*sizeof(int));
+	memset(sbi->dedupe_info.reverse_addr, 0xff, le64_to_cpu(raw_super->block_count)*sizeof(int));
+#endif
 	sbi->dedupe_info.dedupe_block_count = le32_to_cpu(raw_super->segment_count_dedupe)/2*(1024/4);
 	sbi->dedupe_info.dedupe_bitmap_size = sbi->dedupe_info.dedupe_block_count/8;
 	sbi->dedupe_info.dedupe_size = sbi->dedupe_info.dedupe_block_count * DEDUPE_PER_BLOCK * sizeof(struct dedupe);
@@ -1452,6 +1456,9 @@ try_onemore:
 			{
 				sbi->dedupe_info.logical_blk_cnt+=(dedupe+j)->ref;
 				sbi->dedupe_info.physical_blk_cnt++;
+#ifdef F2FS_REVERSE_ADDR
+				sbi->dedupe_info.reverse_addr[(dedupe+j)->addr] = i * DEDUPE_PER_BLOCK + j;
+#endif
 			}
 		}
 		f2fs_put_page(page, 1);
