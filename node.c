@@ -1931,24 +1931,31 @@ static void __flush_nat_entry_set(struct f2fs_sb_info *sbi,
 
 void flush_dedupe_entries(struct f2fs_sb_info *sbi)
 {
-	int i;
+	int i,j;
 
-	for(i=0; i< sbi->dedupe_info.dedupe_block_count; i++)
+	for(j=0;j<sbi->dedupe_info.dedupe_block_count/256;j++)
 	{
-		struct page *page = NULL;
-		u32 dedupe_base_blkaddr = le32_to_cpu(sbi->raw_super->dedupe_blkaddr);
-		if(test_and_clear_bit(i, (long unsigned int *)sbi->dedupe_info.dedupe_md_dirty_bitmap))
+		if(sbi->dedupe_info.dedupe_aa[j].dedupe_md)
 		{
-			if (!f2fs_test_bit(i, sbi->dedupe_info.dedupe_bitmap))
+			for(i=j * 256; i< j*256 + sbi->dedupe_info.dedupe_aa[j].dedupe_block_count; i++)
 			{
-				dedupe_base_blkaddr+=sbi->dedupe_info.dedupe_block_count;
-			}
+				struct page *page = NULL;
+				u32 dedupe_base_blkaddr = le32_to_cpu(sbi->raw_super->dedupe_blkaddr);
+				if(test_and_clear_bit(i, (long unsigned int *)sbi->dedupe_info.dedupe_md_dirty_bitmap))
+				{
+					if (!f2fs_test_bit(i, sbi->dedupe_info.dedupe_bitmap))
+					{
+						dedupe_base_blkaddr+=sbi->dedupe_info.dedupe_block_count;
+					}
 
-			f2fs_change_bit(i, sbi->dedupe_info.dedupe_bitmap);
-			page = get_meta_page(sbi, dedupe_base_blkaddr + i);
-			memcpy(page_address(page),((char *)sbi->dedupe_info.dedupe_md + i*(DEDUPE_PER_BLOCK * sizeof(struct dedupe))) , DEDUPE_PER_BLOCK * sizeof(struct dedupe));
-			set_page_dirty(page);
-			f2fs_put_page(page, 1);
+					f2fs_change_bit(i, sbi->dedupe_info.dedupe_bitmap);
+					page = get_meta_page(sbi, dedupe_base_blkaddr + i);
+					memcpy(page_address(page),sbi->dedupe_info.dedupe_aa[j].dedupe_md + (i - j * 256) * DEDUPE_PER_BLOCK  , DEDUPE_PER_BLOCK * sizeof(struct dedupe));
+					//memcpy(page_address(page),((char *)sbi->dedupe_info.dedupe_aa[0].dedupe_md + i*(DEDUPE_PER_BLOCK * sizeof(struct dedupe))) , DEDUPE_PER_BLOCK * sizeof(struct dedupe));
+					set_page_dirty(page);
+					f2fs_put_page(page, 1);
+				}
+			}
 		}
 	}
 }

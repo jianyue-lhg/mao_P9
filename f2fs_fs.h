@@ -138,6 +138,10 @@ struct f2fs_checkpoint {
 	/* allocation type of current segment */
 	unsigned char alloc_type[MAX_ACTIVE_LOGS];
 
+	__le32 logical_blk_cnt;
+	__le32 physical_blk_cnt;
+	__le16 dedupe_aa_pos;
+
 	/* SIT and NAT version bitmap */
 	unsigned char sit_nat_version_bitmap[1];
 } __packed;
@@ -202,7 +206,9 @@ struct f2fs_inode {
 	__le32 i_gid;			/* group ID */
 	__le32 i_links;			/* links count */
 	__le64 i_size;			/* file size in bytes */
-	__le64 i_blocks;		/* file size in blocks */
+	__le32 i_blocks;		/* file size in blocks */
+	__le16 i_dedupe_addr;
+	__le16 i_dedupe_size;
 	__le64 i_atime;			/* access time */
 	__le64 i_ctime;			/* change time */
 	__le64 i_mtime;			/* modification time */

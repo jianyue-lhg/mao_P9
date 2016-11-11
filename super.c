@@ -1203,7 +1203,7 @@ static int f2fs_fill_super(struct super_block *sb, void *data, int silent)
 	long err;
 	bool retry = true, need_fsck = false;
 	char *options = NULL;
-	int recovery, i, j;
+	int recovery, i;
 
 try_onemore:
 	err = -EINVAL;
@@ -1436,37 +1436,10 @@ try_onemore:
 	sbi->dedupe_info.dedupe_bitmap_size = sbi->dedupe_info.dedupe_block_count/8;
 	sbi->dedupe_info.dedupe_size = sbi->dedupe_info.dedupe_block_count * DEDUPE_PER_BLOCK * sizeof(struct dedupe);
 	sbi->dedupe_info.dedupe_bitmap = kmemdup(__bitmap_ptr(sbi, DEDUPE_BITMAP), sbi->dedupe_info.dedupe_bitmap_size, GFP_KERNEL);
-
 	init_dedupe_info(&sbi->dedupe_info);
-	for(i=0; i<sbi->dedupe_info.dedupe_block_count; i++)
-	{
-		u32 dedupe_base_blkaddr = le32_to_cpu(raw_super->dedupe_blkaddr);
-		struct dedupe *dedupe;
-		struct page *page = NULL;
-		if (f2fs_test_bit(i, sbi->dedupe_info.dedupe_bitmap))
-		{
-			dedupe_base_blkaddr+=sbi->dedupe_info.dedupe_block_count;
-		}
-		page = get_meta_page(sbi, dedupe_base_blkaddr + i);
-		memcpy(((char *)sbi->dedupe_info.dedupe_md + i*(DEDUPE_PER_BLOCK * sizeof(struct dedupe))), page_address(page), DEDUPE_PER_BLOCK * sizeof(struct dedupe));
-		dedupe = (struct dedupe *)((char *)sbi->dedupe_info.dedupe_md + i*(DEDUPE_PER_BLOCK * sizeof(struct dedupe)));
-		for(j=0; j<DEDUPE_PER_BLOCK; j++)
-		{
-			if((dedupe+j)->ref)
-			{
-				sbi->dedupe_info.logical_blk_cnt+=(dedupe+j)->ref;
-				sbi->dedupe_info.physical_blk_cnt++;
-#ifdef F2FS_REVERSE_ADDR
-				sbi->dedupe_info.reverse_addr[(dedupe+j)->addr] = i * DEDUPE_PER_BLOCK + j;
-#endif
-			}
-		}
-		f2fs_put_page(page, 1);
-	}
-#ifdef F2FS_BLOOM_FILTER
-	init_f2fs_dedupe_bloom_filter(&sbi->dedupe_info);
-#endif
-
+	sbi->dedupe_info.logical_blk_cnt = le32_to_cpu(sbi->ckpt->logical_blk_cnt);
+	sbi->dedupe_info.physical_blk_cnt = le32_to_cpu(sbi->ckpt->physical_blk_cnt);
+	sbi->dedupe_info.dedupe_base_blkaddr = le32_to_cpu(raw_super->dedupe_blkaddr);
 	return 0;
 
 free_kobj:

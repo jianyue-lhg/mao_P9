@@ -68,6 +68,8 @@ static struct inode *f2fs_new_inode(struct inode *dir, umode_t mode)
 	if(FS_COMPR_FL&F2FS_I(dir)->i_flags)
 	{
 		F2FS_I(inode)->i_flags|=FS_COMPR_FL;
+		F2FS_I(inode)->i_dedupe_addr = F2FS_I(dir)->i_dedupe_addr;
+		F2FS_I(inode)->i_dedupe_size = F2FS_I(dir)->i_dedupe_size;
 	}
 	f2fs_init_extent_tree(inode, NULL);
 

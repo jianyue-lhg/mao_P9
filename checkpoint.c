@@ -960,6 +960,8 @@ static void do_checkpoint(struct f2fs_sb_info *sbi, struct cp_control *cpc)
 	ckpt->elapsed_time = cpu_to_le64(get_mtime(sbi));
 	ckpt->valid_block_count = cpu_to_le64(valid_user_blocks(sbi));
 	ckpt->free_segment_count = cpu_to_le32(free_segments(sbi));
+	ckpt->logical_blk_cnt = cpu_to_le32(sbi->dedupe_info.logical_blk_cnt);
+	ckpt->physical_blk_cnt = cpu_to_le32(sbi->dedupe_info.physical_blk_cnt);
 	for (i = 0; i < NR_CURSEG_NODE_TYPE; i++) {
 		ckpt->cur_node_segno[i] =
 			cpu_to_le32(curseg_segno(sbi, i + CURSEG_HOT_NODE));
@@ -1023,8 +1025,10 @@ static void do_checkpoint(struct f2fs_sb_info *sbi, struct cp_control *cpc)
 	get_sit_bitmap(sbi, __bitmap_ptr(sbi, SIT_BITMAP));
 	get_nat_bitmap(sbi, __bitmap_ptr(sbi, NAT_BITMAP));
 
+#ifdef F2FS_DEDUPE_PERSISTENCE
 	/* update dedupe bitmap */
 	memcpy(__bitmap_ptr(sbi, DEDUPE_BITMAP), sbi->dedupe_info.dedupe_bitmap, sbi->dedupe_info.dedupe_bitmap_size);
+#endif
 	crc32 = f2fs_crc32(ckpt, le32_to_cpu(ckpt->checksum_offset));
 	*((__le32 *)((unsigned char *)ckpt +
 				le32_to_cpu(ckpt->checksum_offset)))
@@ -1124,7 +1128,9 @@ void write_checkpoint(struct f2fs_sb_info *sbi, struct cp_control *cpc)
 	f2fs_submit_merged_bio(sbi, DATA, WRITE);
 	f2fs_submit_merged_bio(sbi, NODE, WRITE);
 	f2fs_submit_merged_bio(sbi, META, WRITE);
+#ifdef F2FS_DEDUPE_PERSISTENCE
 	flush_dedupe_entries(sbi);
+#endif
 
 	/*
 	 * update checkpoint pack index

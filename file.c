@@ -484,7 +484,9 @@ int truncate_data_blocks_range(struct dnode_of_data *dn, int count)
 		nr_free++;
 		if(FS_COMPR_FL&F2FS_I(dn->inode)->i_flags)
 		{
-			int ret = f2fs_dedupe_delete_addr(blkaddr, dedupe_info);
+			int ret;
+			f2fs_dedupe_load_md(F2FS_I(dn->inode)->i_dedupe_addr, F2FS_I(dn->inode)->i_dedupe_size, sbi);
+			ret = f2fs_dedupe_delete_addr(blkaddr, dedupe_info, F2FS_I(dn->inode)->i_dedupe_addr);
 			if (ret>0)
 			{
 				spin_unlock(&dedupe_info->lock);
@@ -1398,6 +1400,17 @@ static int f2fs_ioc_setflags(struct file *filp, unsigned long arg)
 	mutex_unlock(&inode->i_mutex);
 
 	f2fs_set_inode_flags(inode);
+	if(arg&FS_COMPR_FL)
+	{
+		//printk("set this..\n");
+		struct f2fs_sb_info *sbi = F2FS_I_SB(inode);
+		struct f2fs_checkpoint *ckpt = F2FS_CKPT(sbi);
+		printk("dedupe_aa_pos:%d\n", ckpt->dedupe_aa_pos);
+		fi->i_dedupe_addr = ckpt->dedupe_aa_pos;
+		ckpt->dedupe_aa_pos+=6;
+		fi->i_dedupe_size = 6;
+	}
+
 	inode->i_ctime = CURRENT_TIME;
 	mark_inode_dirty(inode);
 out:

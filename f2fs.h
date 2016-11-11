@@ -476,6 +476,8 @@ struct f2fs_inode_info {
 	/* Encryption params */
 	struct f2fs_crypt_info *i_crypt_info;
 #endif
+	__le16 i_dedupe_addr;
+	__le16 i_dedupe_size;
 };
 
 static inline void get_extent_info(struct extent_info *ext,
@@ -1836,6 +1838,7 @@ void write_data_page_dedupe(struct dnode_of_data *, struct f2fs_io_info *);
 void rewrite_data_page(struct f2fs_io_info *);
 void f2fs_replace_block(struct f2fs_sb_info *, struct dnode_of_data *,
 				block_t, block_t, unsigned char, bool);
+int f2fs_dedupe_load_md(int, int, struct f2fs_sb_info *);
 int allocate_data_block_dedupe(struct f2fs_sb_info *, struct page *,
 		block_t, block_t *, struct f2fs_summary *, int);
 void allocate_data_block(struct f2fs_sb_info *, struct page *,

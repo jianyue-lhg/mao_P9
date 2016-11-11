@@ -808,7 +808,7 @@ void refresh_sit_entry(struct f2fs_sb_info *sbi, block_t old, block_t new)
 }
 
 
-void refresh_sit_entry_dedupe(struct f2fs_sb_info *sbi, block_t old, block_t new)
+void refresh_sit_entry_dedupe(struct f2fs_sb_info *sbi, block_t old, block_t new, int aa_addr)
 {
 	struct dedupe_info *dedupe_info = NULL;
 	update_sit_entry(sbi, new, 1);
@@ -817,7 +817,7 @@ void refresh_sit_entry_dedupe(struct f2fs_sb_info *sbi, block_t old, block_t new
 
 	if (GET_SEGNO(sbi, old) != NULL_SEGNO)
 	{
-		int ret = f2fs_dedupe_delete_addr(old, dedupe_info);
+		int ret = f2fs_dedupe_delete_addr(old, dedupe_info, aa_addr);
 		if (ret>0)
 		{
 			spin_unlock(&dedupe_info->lock);
@@ -1364,12 +1364,94 @@ void allocate_data_block(struct f2fs_sb_info *sbi, struct page *page,
 	mutex_unlock(&curseg->curseg_mutex);
 }
 
+int f2fs_dedupe_O_log2(unsigned int x)
+{
+  unsigned char log_2[256] = {
+    0,1,2,2,3,3,3,3,4,4,4,4,4,4,4,4,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,
+    6,6,6,6,6,6,6,6,6,6,6,6,6,6,6,6,6,6,6,6,6,6,6,6,6,6,6,6,6,6,6,6,
+    7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,
+    7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,
+    8,8,8,8,8,8,8,8,8,8,8,8,8,8,8,8,8,8,8,8,8,8,8,8,8,8,8,8,8,8,8,8,
+    8,8,8,8,8,8,8,8,8,8,8,8,8,8,8,8,8,8,8,8,8,8,8,8,8,8,8,8,8,8,8,8,
+    8,8,8,8,8,8,8,8,8,8,8,8,8,8,8,8,8,8,8,8,8,8,8,8,8,8,8,8,8,8,8,8,
+    8,8,8,8,8,8,8,8,8,8,8,8,8,8,8,8,8,8,8,8,8,8,8,8,8,8,8,8,8,8,8,8
+  };
+  int l = -1;
+  while (x >= 256) { l += 8; x >>= 8; }
+  return l + log_2[x];
+}
+
+int f2fs_dedupe_load_md(int addr, int size, struct f2fs_sb_info *sbi)
+{
+#ifdef F2FS_DEDUPE_PERSISTENCE
+	int i;
+#ifdef F2FS_REVERSE_ADDR
+	int j;
+#endif
+#endif
+	//mutex_lock(&sbi->dedupe_info.mem_lock);
+	struct dedupe_info *dedupe_info = &sbi->dedupe_info;
+
+	if(dedupe_info->dedupe_aa[addr].dedupe_md)
+	{
+		//mutex_unlock(&sbi->dedupe_info.mem_lock);
+		return 0;
+	}
+	dedupe_info->dedupe_aa[addr].dedupe_md = vmalloc(size * 256 * DEDUPE_PER_BLOCK * sizeof(struct dedupe));
+	memset(dedupe_info->dedupe_aa[addr].dedupe_md, 0, size * 256 * DEDUPE_PER_BLOCK * sizeof(struct dedupe));
+	printk("f2fs_dedupe_load_md:%d %d\n", addr, size);
+#ifdef F2FS_BLOOM_FILTER
+	dedupe_info->dedupe_aa[addr].bloom_filter_mask = (1<<(f2fs_dedupe_O_log2(size * 256) + 10)) -1;
+	dedupe_info->dedupe_aa[addr].bloom_filter = vmalloc((dedupe_info->dedupe_aa[addr].bloom_filter_mask + 1) * sizeof(unsigned int));
+	memset(dedupe_info->dedupe_aa[addr].bloom_filter, 0, dedupe_info->dedupe_aa[addr].bloom_filter_mask * sizeof(unsigned int));
+	dedupe_info->dedupe_aa[addr].bloom_filter_hash_fun_count = 4;
+#endif
+	dedupe_info->dedupe_aa[addr].dedupe_block_count = size * 256;
+	dedupe_info->dedupe_aa[addr].last_delete_dedupe = dedupe_info->dedupe_aa[addr].dedupe_md;
+	//sbi->dedupe_info.dedupe_aa[dedupe_addr].size = dedupe_size;
+	//sbi->dedupe_info.dedupe_aa[dedupe_addr].need_free = 0;
+
+#ifdef F2FS_DEDUPE_PERSISTENCE
+	for(i=addr * 256; i<(addr + size) * 256; i++)
+	{
+		unsigned int dedupe_base_blkaddr = sbi->dedupe_info.dedupe_base_blkaddr;
+		struct page *page = NULL;
+#ifdef F2FS_REVERSE_ADDR
+		struct dedupe *dedupe;
+#endif
+		if (f2fs_test_bit(i, dedupe_info->dedupe_bitmap))
+		{
+			dedupe_base_blkaddr+=sbi->dedupe_info.dedupe_block_count;
+		}
+		page = get_meta_page(sbi, dedupe_base_blkaddr + i);
+		memcpy(dedupe_info->dedupe_aa[addr].dedupe_md + (i - addr * 256) * DEDUPE_PER_BLOCK, page_address(page), DEDUPE_PER_BLOCK * sizeof(struct dedupe));
+#ifdef F2FS_REVERSE_ADDR
+		dedupe = sbi->dedupe_info.dedupe_aa[addr].dedupe_md + (i - addr*256) *DEDUPE_PER_BLOCK;
+		for(j=0; j<DEDUPE_PER_BLOCK; j++)
+		{
+			if((dedupe+j)->ref)
+			{
+				sbi->dedupe_info.reverse_addr[(dedupe+j)->addr] = j;
+			}
+		}
+#endif
+		f2fs_put_page(page, 1);
+	}
+#ifdef F2FS_BLOOM_FILTER
+	init_f2fs_dedupe_bloom_filter(&sbi->dedupe_info, addr);
+#endif
+#endif
+	//mutex_unlock(&sbi->dedupe_info.mem_lock);
+	return 0;
+}
+
 int allocate_data_block_dedupe(struct f2fs_sb_info *sbi, struct page *page,
 		block_t old_blkaddr, block_t *new_blkaddr,
 		struct f2fs_summary *sum, int type)
 {
 	struct sit_info *sit_i = SIT_I(sbi);
 	struct curseg_info *curseg;
+	struct f2fs_inode_info *fi  = F2FS_I(page->mapping->host);
 	bool direct_io = (type == CURSEG_DIRECT_IO);
 	u8 hash[16];
 	struct dedupe* dedupe = NULL;
@@ -1378,6 +1460,7 @@ int allocate_data_block_dedupe(struct f2fs_sb_info *sbi, struct page *page,
 
 	curseg = CURSEG_I(sbi, type);
 
+	f2fs_dedupe_load_md(fi->i_dedupe_addr, fi->i_dedupe_size, sbi);
 	f2fs_dedupe_calc_hash(page, hash, &sbi->dedupe_info);
 	mutex_lock(&curseg->curseg_mutex);
 	mutex_lock(&sit_i->sentry_lock);
@@ -1388,11 +1471,11 @@ int allocate_data_block_dedupe(struct f2fs_sb_info *sbi, struct page *page,
 	__allocate_new_segments(sbi, type);
 
 	spin_lock(&sbi->dedupe_info.lock);
-	dedupe = f2fs_dedupe_search(hash, &sbi->dedupe_info);
+	dedupe = f2fs_dedupe_search(hash, &sbi->dedupe_info, fi->i_dedupe_addr);
 	if(!dedupe)
 	{
 		*new_blkaddr = NEXT_FREE_BLKADDR(sbi, curseg);
-		f2fs_dedupe_add(hash, &sbi->dedupe_info, *new_blkaddr);
+		f2fs_dedupe_add(hash, &sbi->dedupe_info, *new_blkaddr, fi->i_dedupe_addr);
 		spin_lock(&sbi->stat_lock);
 		sbi->total_valid_block_count ++;
 		spin_unlock(&sbi->stat_lock);
@@ -1401,13 +1484,13 @@ int allocate_data_block_dedupe(struct f2fs_sb_info *sbi, struct page *page,
 	else
 	{
 		dedupe->ref++;
-		set_dedupe_dirty(&sbi->dedupe_info, dedupe);
+		set_dedupe_dirty(&sbi->dedupe_info, dedupe, fi->i_dedupe_addr);
 		*new_blkaddr = dedupe->addr;
 		spin_unlock(&sbi->dedupe_info.lock);
 
 		if (GET_SEGNO(sbi, old_blkaddr) != NULL_SEGNO)
 		{
-			int ret = f2fs_dedupe_delete_addr(old_blkaddr, &sbi->dedupe_info);
+			int ret = f2fs_dedupe_delete_addr(old_blkaddr, &sbi->dedupe_info, fi->i_dedupe_addr);
 			if (ret>0)
 			{
 				spin_unlock(&sbi->dedupe_info.lock);
@@ -1446,7 +1529,7 @@ int allocate_data_block_dedupe(struct f2fs_sb_info *sbi, struct page *page,
 	 * SIT information should be updated before segment allocation,
 	 * since SSR needs latest valid block information.
 	 */
-	refresh_sit_entry_dedupe(sbi, old_blkaddr, *new_blkaddr);
+	refresh_sit_entry_dedupe(sbi, old_blkaddr, *new_blkaddr, fi->i_dedupe_addr);
 
 	mutex_unlock(&sit_i->sentry_lock);
 
