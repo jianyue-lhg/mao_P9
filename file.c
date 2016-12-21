@@ -470,12 +470,18 @@ int truncate_data_blocks_range(struct dnode_of_data *dn, int count)
 	__le32 *addr;
 	struct dedupe_info *dedupe_info = NULL;
 
+	  printk("truncate_data_blocks_range--------\n");
+
 	raw_node = F2FS_NODE(dn->node_page);
 	addr = blkaddr_in_node(raw_node) + ofs;
 	dedupe_info = &F2FS_SB(dn->inode->i_sb)->dedupe_info;
 
 	for (; count > 0; count--, addr++, dn->ofs_in_node++) {
 		block_t blkaddr = le32_to_cpu(*addr);
+		block_t blkaddr1;   //---------------lhg
+		struct dedupe *detmp;
+		//u8 hash[16];        //---------------lhg
+		struct parity_table *tmp;   //-------------lhg
 		if (blkaddr == NULL_ADDR)
 			continue;
 
@@ -484,9 +490,49 @@ int truncate_data_blocks_range(struct dnode_of_data *dn, int count)
 		nr_free++;
 		if(FS_COMPR_FL&F2FS_I(dn->inode)->i_flags)
 		{
-			int ret = f2fs_dedupe_delete_addr(blkaddr, dedupe_info);
-			if (ret>0)
+		    int i;
+			//int ret = f2fs_dedupe_delete_addr(blkaddr, dedupe_info);
+			detmp = f2fs_dedupe_delete_addr(blkaddr, dedupe_info);
+	//----------------------------------lhg----------------------------------//
+			for(i=0;i<2;i++)
+	{
+		printk("%llx",be64_to_cpu(*(long long*)&detmp->hash[i*8]));
+		
+	}
+			printk("\nthis is\n");
+     //-------------------------------------lhg------------------xia------------//
+			//if (ret>0)
+			if(detmp->ref > 0)
 			{
+	//-------------------------------------lhg------------------------------//
+				   if(detmp->ref==9)
+			   	{
+                 tmp = f2fs_search_ptye_hash(detmp->hash, dedupe_info);
+				 blkaddr1=tmp->blkaddr2;
+				 tmp->blkaddr2=0;
+				  printk("shanchushi tmp->blkaddr1 is %u\n",tmp->blkaddr1);
+				 printk("shanchushi tmp->blkaddr2 is %u\n",tmp->blkaddr2);
+				  printk("shanchushi tmp->flag is %d\n",tmp->flag);
+				spin_lock(&sbi->stat_lock);
+				sbi->total_valid_block_count--;
+				spin_unlock(&sbi->stat_lock);
+				invalidate_blocks(sbi, blkaddr1);				
+			   }
+				   if(detmp->ref==4)
+			   	{
+                 tmp = f2fs_search_ptye_hash(detmp->hash, dedupe_info);
+				 blkaddr1=tmp->blkaddr1;
+				 tmp->blkaddr1=0;
+				 tmp->flag=0;
+				  printk("shanchushi tmp->blkaddr1 is %u\n",tmp->blkaddr1);
+				 printk("shanchushi tmp->blkaddr2 is %u\n",tmp->blkaddr2);
+				  printk("shanchushi tmp->flag is %d\n",tmp->flag);
+				spin_lock(&sbi->stat_lock);
+				sbi->total_valid_block_count--;
+				spin_unlock(&sbi->stat_lock);
+				invalidate_blocks(sbi, blkaddr1);
+			   }
+     //-------------------------------------lhg------------------xia------------//
 				spin_unlock(&dedupe_info->lock);
 				continue;
 			}
@@ -494,7 +540,8 @@ int truncate_data_blocks_range(struct dnode_of_data *dn, int count)
 			{
 				spin_unlock(&dedupe_info->lock);
 			}
-			if(0 == ret)
+			//if(0 == ret)
+			if(detmp->ref == 0)
 			{
 				spin_lock(&sbi->stat_lock);
 				sbi->total_valid_block_count--;
@@ -524,6 +571,7 @@ int truncate_data_blocks_range(struct dnode_of_data *dn, int count)
 
 	trace_f2fs_truncate_data_blocks_range(dn->inode, dn->nid,
 					 dn->ofs_in_node, nr_free);
+	 printk("truncate_data_blocks_range end--------\n");
 	return nr_free;
 }
 
@@ -573,6 +621,8 @@ int truncate_blocks(struct inode *inode, u64 from, bool lock)
 	struct page *ipage;
 	bool truncate_page = false;
 
+	  printk("truncate_blocks  start--------\n");
+
 	trace_f2fs_truncate_blocks_enter(inode, from);
 
 	free_from = (pgoff_t)F2FS_BYTES_TO_BLK(from + blocksize - 1);
@@ -614,6 +664,8 @@ int truncate_blocks(struct inode *inode, u64 from, bool lock)
 
 	f2fs_put_dnode(&dn);
 free_next:
+	
+	printk("truncate_blocks free next--------\n");
 	err = truncate_inode_blocks(inode, free_from);
 out:
 	if (lock)
@@ -624,12 +676,15 @@ out:
 		err = truncate_partial_data_page(inode, from, truncate_page);
 
 	trace_f2fs_truncate_blocks_exit(inode, err);
+	
+	printk("truncate_blocks  end--------\n");
 	return err;
 }
 
 int f2fs_truncate(struct inode *inode, bool lock)
 {
 	int err;
+	  printk("f2fs_truncate  start--------\n");
 
 	if (!(S_ISREG(inode->i_mode) || S_ISDIR(inode->i_mode) ||
 				S_ISLNK(inode->i_mode)))
@@ -650,6 +705,8 @@ int f2fs_truncate(struct inode *inode, bool lock)
 
 	inode->i_mtime = inode->i_ctime = CURRENT_TIME;
 	mark_inode_dirty(inode);
+
+	 printk("f2fs_truncate  end--------\n");
 	return 0;
 }
 

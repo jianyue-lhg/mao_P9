@@ -304,7 +304,7 @@ struct page *get_read_data_page(struct inode *inode, pgoff_t index, int rw)
 	if (f2fs_encrypted_inode(inode) && S_ISREG(inode->i_mode))
 		return read_mapping_page(mapping, index, NULL);
 
-	page = grab_cache_page(mapping, index);
+	page = grab_cache_page(mapping, index);  //-----------¿ª±ÙÒ³¿ò
 	if (!page)
 		return ERR_PTR(-ENOMEM);
 
@@ -1063,6 +1063,7 @@ int do_write_data_page(struct f2fs_io_info *fio)
 	struct dnode_of_data dn;
 	int err = 0;
 
+     printk("do_write_data_page start\n");
 	set_new_dnode(&dn, inode, NULL, NULL, 0);
 	err = get_dnode_of_data(&dn, page->index, LOOKUP_NODE);
 	if (err)

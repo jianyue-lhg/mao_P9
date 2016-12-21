@@ -662,7 +662,7 @@ static int gc_data_segment(struct f2fs_sb_info *sbi, struct f2fs_summary *sum,
 	int off;
 	int phase = 0;
 
-	start_addr = START_BLOCK(sbi, segno);
+	start_addr = START_BLOCK(sbi, segno);  //------------段开始的地址
 
 next_step:
 	entry = sum;
@@ -679,21 +679,27 @@ next_step:
 			return 0;
 
 		if (check_valid_map(sbi, segno, off) == 0)
-			continue;
+			continue;   //----------------------检测位图
 
 		if (phase == 0) {
+			//******加一个判断***********//
+			//那么就要先获得相应的segno_info
+
+			//**************************//
 			ra_node_page(sbi, le32_to_cpu(entry->nid));
 			continue;
 		}
 
 		/* Get an inode by ino with checking validity */
 		if (!is_alive(sbi, entry, &dni, start_addr + off, &nofs))
-			continue;
+			continue;   //-----------是 node_page
 
 		if (phase == 1) {
 			ra_node_page(sbi, dni.ino);
 			continue;
 		}
+
+		
 
 		ofs_in_node = le16_to_cpu(entry->ofs_in_node);
 

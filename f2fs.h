@@ -1162,7 +1162,7 @@ static inline unsigned long __bitmap_size(struct f2fs_sb_info *sbi, int flag)
 
 	/* return NAT or SIT bitmap */
 	if (flag == NAT_BITMAP)
-		return le32_to_cpu(ckpt->nat_ver_bitmap_bytesize);
+		return le32_to_cpu(ckpt->nat_ver_bitmap_bytesize) - sbi->dedupe_info.dedupe_bitmap_size;
 	else if (flag == SIT_BITMAP)
 		return le32_to_cpu(ckpt->sit_ver_bitmap_bytesize);
 
@@ -1195,7 +1195,7 @@ static inline void *__bitmap_ptr(struct f2fs_sb_info *sbi, int flag)
 				offset = le32_to_cpu(ckpt->sit_ver_bitmap_bytesize);
 				break;
 			case DEDUPE_BITMAP:
-				offset = le32_to_cpu(ckpt->sit_ver_bitmap_bytesize) +  le32_to_cpu(ckpt->nat_ver_bitmap_bytesize);
+				offset = le32_to_cpu(ckpt->sit_ver_bitmap_bytesize) +  le32_to_cpu(ckpt->nat_ver_bitmap_bytesize) - sbi->dedupe_info.dedupe_bitmap_size;
 				break;
 		}
 		//printk("offset:%d\n",offset);
@@ -1837,7 +1837,7 @@ void rewrite_data_page(struct f2fs_io_info *);
 void f2fs_replace_block(struct f2fs_sb_info *, struct dnode_of_data *,
 				block_t, block_t, unsigned char, bool);
 int allocate_data_block_dedupe(struct f2fs_sb_info *, struct page *,
-		block_t, block_t *, struct f2fs_summary *, int);
+		block_t, block_t *, struct f2fs_summary *, int,block_t *);  //--------------lhg
 void allocate_data_block(struct f2fs_sb_info *, struct page *,
 		block_t, block_t *, struct f2fs_summary *, int);
 void f2fs_wait_on_page_writeback(struct page *, enum page_type, bool);

@@ -5,8 +5,10 @@
 //#define F2FS_NO_HASH 1
 #define F2FS_REVERSE_ADDR 1
 
+#define DEDUPE_SEGMENT_COUNT 6
 #define DEDUPE_PER_BLOCK (PAGE_CACHE_SIZE/sizeof(struct dedupe))
 
+#define PARITY_NUM  ((10*1024*1024)/sizeof(struct parity_table))
 typedef u32 block_t;
 
 struct dedupe
@@ -19,6 +21,7 @@ struct dedupe
 struct dedupe_info
 {
 	int digest_len;
+	struct parity_table *pty;  //-------------lhg
 #ifdef F2FS_BLOOM_FILTER
 	unsigned int bloom_filter_mask;
 	unsigned int *bloom_filter;
@@ -29,6 +32,7 @@ struct dedupe_info
 	struct dedupe* dedupe_md;
 	char *dedupe_md_dirty_bitmap;	/*bitmap for dirty dedupe blocks*/
 	char *dedupe_bitmap;				/*bitmap for dedupe checkpoint*/
+	unsigned int dedupe_segment_count;
 	unsigned int dedupe_bitmap_size;	/*bitmap size of dedupe_md_dirty_bitmap&dedupe_bitmap*/
 	unsigned int dedupe_size;			/*size of dedupes in memory*/
 	unsigned int dedupe_block_count;
@@ -43,13 +47,32 @@ struct dedupe_info
 };
 
 
+//---------------------------------------lhg------------------------------------------//
+   struct parity_table{
+       	u8 hash[16];
+		block_t blkaddr1;
+		block_t blkaddr2;
+		int flag;
+};
+
+extern int f2fs_init_parity_table(struct dedupe_info *dedupe_info);
+extern int f2fs_parity_insert1( u8 hash[], block_t blkaddr,struct dedupe_info *dedupe_info);
+extern int f2fs_parity_insert2(u8 hash[],block_t blkaddr,struct dedupe_info *dedupe_info);
+extern struct parity_table *f2fs_search_ptye_hash(u8 hash[],struct dedupe_info *dedupe_info);
+
+
+//---------------------------------------lhg-----------------------xia-------------------//
+
+
 extern int f2fs_dedupe_calc_hash(struct page *p, u8 hash[], struct dedupe_info *dedupe_info);
 extern struct dedupe *f2fs_dedupe_search(u8 hash[], struct dedupe_info *dedupe_info);
 extern int f2fs_dedupe_add(u8 hash[], struct dedupe_info *dedupe_info, block_t addr);
 extern int init_dedupe_info(struct dedupe_info *dedupe_info);
 extern void init_f2fs_dedupe_bloom_filter(struct dedupe_info *dedupe_info);
 extern void exit_dedupe_info(struct dedupe_info *dedupe_info);
-extern int f2fs_dedupe_delete_addr(block_t addr, struct dedupe_info *dedupe_info);
+//extern int f2fs_dedupe_delete_addr(block_t addr, struct dedupe_info *dedupe_info,u8 hash[]);
+extern struct dedupe *f2fs_dedupe_delete_addr(block_t addr, struct dedupe_info *dedupe_info);  //-------lhg
+
 extern void set_dedupe_dirty(struct dedupe_info *dedupe_info, struct dedupe *dedupe);
 
 #endif
